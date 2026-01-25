@@ -10,6 +10,9 @@ if (isset($_POST['submit'])) {
     update_option('wpd_default_amount', floatval($_POST['wpd_default_amount']));
     update_option('wpd_success_message', sanitize_textarea_field($_POST['wpd_success_message']));
     update_option('wpd_enable_recurring', isset($_POST['wpd_enable_recurring']) ? 1 : 0);
+    update_option('wpd_paypal_client_id', sanitize_text_field($_POST['wpd_paypal_client_id']));
+    update_option('wpd_paypal_client_secret', sanitize_text_field($_POST['wpd_paypal_client_secret']));
+    update_option('wpd_payment_method', sanitize_text_field($_POST['wpd_payment_method']));
     
     echo '<div class="notice notice-success"><p>' . __('Settings saved!', 'wp-paypal-donations') . '</p></div>';
 }
@@ -20,6 +23,9 @@ $currency = get_option('wpd_currency', 'USD');
 $default_amount = get_option('wpd_default_amount', '25');
 $success_message = get_option('wpd_success_message', __('Thank you for your donation!', 'wp-paypal-donations'));
 $enable_recurring = get_option('wpd_enable_recurring', 0);
+$paypal_client_id = get_option('wpd_paypal_client_id', 'Af_8jpwQ0WWKhd4yAdu6QlLl1UO-V39g-sjIbAJMJ5M29REYrujHYGIDHXGOuIQvouaDRkU-bgYChIv7');
+$paypal_client_secret = get_option('wpd_paypal_client_secret', 'ECQ61mmOEG7bOdnPnjFOtxuD3q1OhJIcx7yyu_Ux78xM5zJLOoeV8EJfb0fkuo1EulQEQHAg7e0cXM0I');
+$payment_method = get_option('wpd_payment_method', 'rest_api');
 ?>
 
 <div class="wrap">
@@ -31,11 +37,44 @@ $enable_recurring = get_option('wpd_enable_recurring', 0);
         <table class="form-table">
             <tr>
                 <th scope="row">
+                    <label for="wpd_payment_method"><?php _e('Payment Method', 'wp-paypal-donations'); ?></label>
+                </th>
+                <td>
+                    <select id="wpd_payment_method" name="wpd_payment_method" onchange="togglePaymentMethod()">
+                        <option value="standard" <?php selected($payment_method, 'standard'); ?>><?php _e('PayPal Standard (Legacy)', 'wp-paypal-donations'); ?></option>
+                        <option value="rest_api" <?php selected($payment_method, 'rest_api'); ?>><?php _e('PayPal REST API (Recommended)', 'wp-paypal-donations'); ?></option>
+                    </select>
+                    <p class="description"><?php _e('Choose your preferred PayPal integration method.', 'wp-paypal-donations'); ?></p>
+                </td>
+            </tr>
+            
+            <tr id="standard_email_row" style="<?php echo ($payment_method === 'rest_api') ? 'display: none;' : ''; ?>">
+                <th scope="row">
                     <label for="wpd_paypal_email"><?php _e('PayPal Email', 'wp-paypal-donations'); ?></label>
                 </th>
                 <td>
-                    <input type="email" id="wpd_paypal_email" name="wpd_paypal_email" value="<?php echo esc_attr($paypal_email); ?>" class="regular-text" required />
-                    <p class="description"><?php _e('Enter your PayPal email address to receive donations.', 'wp-paypal-donations'); ?></p>
+                    <input type="email" id="wpd_paypal_email" name="wpd_paypal_email" value="<?php echo esc_attr($paypal_email); ?>" class="regular-text" />
+                    <p class="description"><?php _e('Enter your PayPal email address (for PayPal Standard only).', 'wp-paypal-donations'); ?></p>
+                </td>
+            </tr>
+            
+            <tr id="rest_client_id_row" style="<?php echo ($payment_method === 'standard') ? 'display: none;' : ''; ?>">
+                <th scope="row">
+                    <label for="wpd_paypal_client_id"><?php _e('PayPal Client ID', 'wp-paypal-donations'); ?></label>
+                </th>
+                <td>
+                    <input type="text" id="wpd_paypal_client_id" name="wpd_paypal_client_id" value="<?php echo esc_attr($paypal_client_id); ?>" class="large-text" />
+                    <p class="description"><?php _e('Enter your PayPal REST API Client ID from your PayPal Developer Dashboard.', 'wp-paypal-donations'); ?></p>
+                </td>
+            </tr>
+            
+            <tr id="rest_client_secret_row" style="<?php echo ($payment_method === 'standard') ? 'display: none;' : ''; ?>">
+                <th scope="row">
+                    <label for="wpd_paypal_client_secret"><?php _e('PayPal Client Secret', 'wp-paypal-donations'); ?></label>
+                </th>
+                <td>
+                    <input type="password" id="wpd_paypal_client_secret" name="wpd_paypal_client_secret" value="<?php echo esc_attr($paypal_client_secret); ?>" class="large-text" />
+                    <p class="description"><?php _e('Enter your PayPal REST API Client Secret from your PayPal Developer Dashboard.', 'wp-paypal-donations'); ?></p>
                 </td>
             </tr>
             
@@ -109,11 +148,45 @@ $enable_recurring = get_option('wpd_enable_recurring', 0);
     <p><?php _e('You can also customize the form:', 'wp-paypal-donations'); ?></p>
     <code>[donation_form amount="50" title="Support Our Cause"]</code>
     
+    <h3><?php _e('PayPal REST API Setup', 'wp-paypal-donations'); ?></h3>
+    <ol>
+        <li><?php _e('Create a PayPal Developer account at https://developer.paypal.com', 'wp-paypal-donations'); ?></li>
+        <li><?php _e('Create a new App in the PayPal Developer Dashboard', 'wp-paypal-donations'); ?></li>
+        <li><?php _e('Copy your Client ID and Client Secret from the App details', 'wp-paypal-donations'); ?></li>
+        <li><?php _e('Select "PayPal REST API" as Payment Method above', 'wp-paypal-donations'); ?></li>
+        <li><?php _e('Enter your credentials and enable Sandbox Mode for testing', 'wp-paypal-donations'); ?></li>
+        <li><?php _e('Disable Sandbox Mode when ready for live donations', 'wp-paypal-donations'); ?></li>
+    </ol>
+    
     <h3><?php _e('Testing with PayPal Sandbox', 'wp-paypal-donations'); ?></h3>
     <ol>
         <li><?php _e('Enable Sandbox Mode above', 'wp-paypal-donations'); ?></li>
-        <li><?php _e('Use your PayPal Sandbox business account email', 'wp-paypal-donations'); ?></li>
+        <li><?php _e('Use your PayPal Sandbox credentials (Client ID/Secret or business email)', 'wp-paypal-donations'); ?></li>
         <li><?php _e('Test with PayPal Sandbox buyer accounts', 'wp-paypal-donations'); ?></li>
         <li><?php _e('Disable Sandbox Mode when ready for live donations', 'wp-paypal-donations'); ?></li>
     </ol>
 </div>
+
+<script>
+function togglePaymentMethod() {
+    var method = document.getElementById('wpd_payment_method').value;
+    var standardRows = ['standard_email_row'];
+    var restApiRows = ['rest_client_id_row', 'rest_client_secret_row'];
+    
+    if (method === 'rest_api') {
+        standardRows.forEach(function(row) {
+            document.getElementById(row).style.display = 'none';
+        });
+        restApiRows.forEach(function(row) {
+            document.getElementById(row).style.display = '';
+        });
+    } else {
+        standardRows.forEach(function(row) {
+            document.getElementById(row).style.display = '';
+        });
+        restApiRows.forEach(function(row) {
+            document.getElementById(row).style.display = 'none';
+        });
+    }
+}
+</script>

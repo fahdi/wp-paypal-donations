@@ -19,10 +19,16 @@ define('WPD_VERSION', '1.0.0');
 
 class WP_PayPal_Donations {
     
+    private $paypal_api;
+    
     public function __construct() {
         add_action('init', array($this, 'init'));
         register_activation_hook(__FILE__, array($this, 'activate'));
         register_deactivation_hook(__FILE__, array($this, 'deactivate'));
+        
+        // Include the PayPal REST API class
+        require_once WPD_PLUGIN_PATH . 'includes/class-paypal-rest-api.php';
+        $this->paypal_api = new WPD_PayPal_REST_API();
     }
     
     public function init() {
@@ -99,6 +105,9 @@ class WP_PayPal_Donations {
         register_setting('wpd_settings', 'wpd_default_amount');
         register_setting('wpd_settings', 'wpd_success_message');
         register_setting('wpd_settings', 'wpd_enable_recurring');
+        register_setting('wpd_settings', 'wpd_paypal_client_id');
+        register_setting('wpd_settings', 'wpd_paypal_client_secret');
+        register_setting('wpd_settings', 'wpd_payment_method');
     }
     
     public function enqueue_scripts() {
@@ -133,6 +142,7 @@ class WP_PayPal_Donations {
         $donor_email = sanitize_email($_POST['donor_email']);
         $currency = get_option('wpd_currency', 'USD');
         $recurring = isset($_POST['recurring']) ? true : false;
+        $payment_method = get_option('wpd_payment_method', 'standard');
         
         if (empty($amount) || empty($donor_name) || empty($donor_email)) {
             wp_die(__('Please fill in all required fields.', 'wp-paypal-donations'));
@@ -153,31 +163,61 @@ class WP_PayPal_Donations {
             array('%s', '%s', '%f', '%s', '%s')
         );
         
-        $paypal_url = $this->get_paypal_url();
-        $paypal_email = get_option('wpd_paypal_email');
+        $return_url = add_query_arg(array('donation_success' => '1', 'donation_id' => $wpdb->insert_id), home_url());
+        $cancel_url = add_query_arg('donation_cancelled', '1', home_url());
         
-        $paypal_args = array(
-            'business' => $paypal_email,
-            'cmd' => $recurring ? '_xclick-subscriptions' : '_donations',
-            'item_name' => __('Donation to ', 'wp-paypal-donations') . get_bloginfo('name'),
-            'amount' => $amount,
-            'currency_code' => $currency,
-            'return' => add_query_arg('donation_success', '1', home_url()),
-            'cancel_return' => add_query_arg('donation_cancelled', '1', home_url()),
-            'notify_url' => add_query_arg('wpd_ipn', '1', home_url()),
-            'custom' => $wpdb->insert_id
-        );
-        
-        if ($recurring) {
-            $paypal_args['p3'] = 1;
-            $paypal_args['t3'] = 'M';
-            $paypal_args['src'] = 1;
-            $paypal_args['no_note'] = 1;
+        if ($payment_method === 'rest_api') {
+            // Use PayPal REST API
+            $description = sprintf(__('Donation to %s', 'wp-paypal-donations'), get_bloginfo('name'));
+            
+            if ($recurring) {
+                $result = $this->paypal_api->create_subscription($amount, $currency, $return_url, $cancel_url);
+            } else {
+                $result = $this->paypal_api->create_payment($amount, $currency, $return_url, $cancel_url, $description);
+            }
+            
+            if ($result['success']) {
+                // Store PayPal order ID for later reference
+                $wpdb->update(
+                    $table_name,
+                    array('transaction_id' => $result[$recurring ? 'subscription_id' : 'order_id']),
+                    array('id' => $wpdb->insert_id),
+                    array('%s'),
+                    array('%d')
+                );
+                
+                wp_send_json_success(array('redirect_url' => $result['approval_url']));
+            } else {
+                wp_send_json_error(array('message' => $result['message']));
+            }
+        } else {
+            // Use PayPal Standard (legacy)
+            $paypal_url = $this->get_paypal_url();
+            $paypal_email = get_option('wpd_paypal_email');
+            
+            $paypal_args = array(
+                'business' => $paypal_email,
+                'cmd' => $recurring ? '_xclick-subscriptions' : '_donations',
+                'item_name' => __('Donation to ', 'wp-paypal-donations') . get_bloginfo('name'),
+                'amount' => $amount,
+                'currency_code' => $currency,
+                'return' => $return_url,
+                'cancel_return' => $cancel_url,
+                'notify_url' => add_query_arg('wpd_ipn', '1', home_url()),
+                'custom' => $wpdb->insert_id
+            );
+            
+            if ($recurring) {
+                $paypal_args['p3'] = 1;
+                $paypal_args['t3'] = 'M';
+                $paypal_args['src'] = 1;
+                $paypal_args['no_note'] = 1;
+            }
+            
+            $paypal_redirect = add_query_arg($paypal_args, $paypal_url);
+            
+            wp_send_json_success(array('redirect_url' => $paypal_redirect));
         }
-        
-        $paypal_redirect = add_query_arg($paypal_args, $paypal_url);
-        
-        wp_send_json_success(array('redirect_url' => $paypal_redirect));
     }
     
     private function get_paypal_url() {
@@ -187,6 +227,10 @@ class WP_PayPal_Donations {
     
     public function handle_paypal_return() {
         if (isset($_GET['donation_success'])) {
+            // Handle REST API return
+            if (isset($_GET['token']) && isset($_GET['PayerID'])) {
+                $this->handle_rest_api_return();
+            }
             add_action('wp_footer', array($this, 'show_success_message'));
         }
         
@@ -196,6 +240,39 @@ class WP_PayPal_Donations {
         
         if (isset($_GET['wpd_ipn'])) {
             $this->handle_ipn();
+        }
+    }
+    
+    private function handle_rest_api_return() {
+        $token = sanitize_text_field($_GET['token']);
+        $payer_id = sanitize_text_field($_GET['PayerID']);
+        $donation_id = isset($_GET['donation_id']) ? intval($_GET['donation_id']) : 0;
+        
+        if (!$token || !$payer_id) {
+            return;
+        }
+        
+        // For PayPal REST API, the token is the order ID
+        $result = $this->paypal_api->capture_payment($token);
+        
+        if ($result['success']) {
+            global $wpdb;
+            $table_name = $wpdb->prefix . 'donations';
+            
+            $wpdb->update(
+                $table_name,
+                array(
+                    'payment_status' => 'completed',
+                    'transaction_id' => $result['transaction_id'],
+                    'paypal_response' => serialize($result['data'])
+                ),
+                array('id' => $donation_id),
+                array('%s', '%s', '%s'),
+                array('%d')
+            );
+            
+            // Send notification emails
+            $this->send_donation_notifications($donation_id);
         }
     }
     

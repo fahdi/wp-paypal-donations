@@ -32,6 +32,9 @@ class WP_PayPal_Donations {
         
         // Include the enhanced donations list table class
         require_once WPD_PLUGIN_PATH . 'includes/class-donations-list-table.php';
+        
+        // Include the data validation and security framework
+        require_once WPD_PLUGIN_PATH . 'includes/class-data-validator.php';
     }
     
     public function init() {
@@ -119,9 +122,20 @@ class WP_PayPal_Donations {
         
         wp_localize_script('wpd-frontend', 'wpd_ajax', array(
             'ajax_url' => admin_url('admin-ajax.php'),
-            'nonce' => wp_create_nonce('wpd_nonce'),
+            'nonce' => wp_create_nonce('wpd_donation_form'),
             'processing_text' => __('Processing...', 'wp-paypal-donations'),
-            'currency' => get_option('wpd_currency', 'USD')
+            'currency' => get_option('wpd_currency', 'USD'),
+            'security' => array(
+                'max_name_length' => 100,
+                'max_email_length' => 254,
+                'min_amount' => 1.00,
+                'max_amount' => 10000.00
+            ),
+            'messages' => array(
+                'validation_failed' => __('Please check your input and try again.', 'wp-paypal-donations'),
+                'rate_limited' => __('Too many attempts. Please wait before trying again.', 'wp-paypal-donations'),
+                'processing_error' => __('An error occurred. Please try again.', 'wp-paypal-donations')
+            )
         ));
     }
     
@@ -138,18 +152,36 @@ class WP_PayPal_Donations {
     }
     
     public function process_donation() {
-        check_ajax_referer('wpd_nonce', 'nonce');
+        // Enhanced security: Validate all donation data through comprehensive framework
+        $form_data = array(
+            'donor_name' => $_POST['donor_name'] ?? '',
+            'donor_email' => $_POST['donor_email'] ?? '',
+            'amount' => $_POST['amount'] ?? '',
+            'currency' => $_POST['currency'] ?? get_option('wpd_currency', 'USD'),
+            'message' => $_POST['message'] ?? '',
+            'recurring' => $_POST['recurring'] ?? false,
+            'wpd_nonce' => $_POST['nonce'] ?? '',
+            // Honeypot field for bot detection
+            'wpd_website_url' => $_POST['wpd_website_url'] ?? ''
+        );
         
-        $amount = sanitize_text_field($_POST['amount']);
-        $donor_name = sanitize_text_field($_POST['donor_name']);
-        $donor_email = sanitize_email($_POST['donor_email']);
-        $currency = get_option('wpd_currency', 'USD');
-        $recurring = isset($_POST['recurring']) ? true : false;
-        $payment_method = get_option('wpd_payment_method', 'standard');
+        // Critical: Comprehensive validation and sanitization
+        $validated_data = WPD_Data_Validator::validate_donation_data($form_data);
         
-        if (empty($amount) || empty($donor_name) || empty($donor_email)) {
-            wp_die(__('Please fill in all required fields.', 'wp-paypal-donations'));
+        if (is_wp_error($validated_data)) {
+            wp_send_json_error(array(
+                'message' => $validated_data->get_error_message(),
+                'code' => $validated_data->get_error_code()
+            ));
         }
+        
+        // Extract validated data
+        $donor_name = $validated_data['donor_name'];
+        $donor_email = $validated_data['donor_email'];
+        $amount = $validated_data['amount'];
+        $currency = $validated_data['currency'];
+        $recurring = $validated_data['recurring'];
+        $payment_method = get_option('wpd_payment_method', 'standard');
         
         global $wpdb;
         $table_name = $wpdb->prefix . 'donations';

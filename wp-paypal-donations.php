@@ -3,7 +3,7 @@
  * Plugin Name: WP PayPal Donations
  * Plugin URI: https://example.com
  * Description: Simple and secure donation collection plugin with PayPal integration and sandbox testing support.
- * Version: 1.0.0
+ * Version: 1.3.0
  * Author: Your Name
  * License: GPL v2 or later
  * Text Domain: wp-paypal-donations
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
 
 define('WPD_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('WPD_PLUGIN_PATH', plugin_dir_path(__FILE__));
-define('WPD_VERSION', '1.0.0');
+define('WPD_VERSION', '1.3.0');
 
 class WP_PayPal_Donations {
     
@@ -35,6 +35,9 @@ class WP_PayPal_Donations {
         
         // Include the data validation and security framework
         require_once WPD_PLUGIN_PATH . 'includes/class-data-validator.php';
+        
+        // Include the analytics and insights engine  
+        require_once WPD_PLUGIN_PATH . 'includes/class-analytics-engine.php';
     }
     
     public function init() {
@@ -101,6 +104,15 @@ class WP_PayPal_Donations {
             'manage_options',
             'wp-paypal-donations-settings',
             array($this, 'settings_page')
+        );
+        
+        add_submenu_page(
+            'wp-paypal-donations',
+            __('Analytics Dashboard', 'wp-paypal-donations'),
+            __('Analytics', 'wp-paypal-donations'),
+            'manage_options',
+            'wp-paypal-donations-analytics',
+            array($this, 'analytics_page')
         );
     }
     
@@ -488,6 +500,10 @@ class WP_PayPal_Donations {
     
     public function settings_page() {
         include WPD_PLUGIN_PATH . 'admin/settings-page.php';
+    }
+    
+    public function analytics_page() {
+        include WPD_PLUGIN_PATH . 'admin/analytics-dashboard.php';
     }
     
     public function get_currency_symbol($currency = 'USD') {

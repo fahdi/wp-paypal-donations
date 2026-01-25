@@ -1,0 +1,170 @@
+.wpd-donation-form-block-editor {
+    border: 2px dashed #ddd;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    position: relative;
+}
+
+.wpd-donation-form-block-editor::before {
+    content: '💖 Donation Form Block';
+    display: block;
+    text-align: center;
+    font-weight: 600;
+    color: #666;
+    margin-bottom: 15px;
+    font-size: 14px;
+}
+
+.wpd-donation-form-block-editor .wpd-block-preview {
+    max-width: 500px;
+    margin: 0 auto;
+    background: white;
+    padding: 20px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.wpd-donation-form-block-editor .wpd-form-title {
+    text-align: center;
+    margin: 0 0 20px 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #333;
+    border: none;
+    padding: 8px;
+    border-radius: 4px;
+    background: transparent;
+}
+
+.wpd-donation-form-block-editor .wpd-form-title:focus {
+    outline: 2px solid #0073aa;
+    outline-offset: 2px;
+    background: #f8f9fa;
+}
+
+.wpd-form-preview .wpd-form-row {
+    margin-bottom: 15px;
+}
+
+.wpd-form-preview .wpd-form-row label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    font-size: 14px;
+    color: #555;
+}
+
+.wpd-form-preview .wpd-form-row input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    background: #f9f9f9;
+    color: #666;
+    box-sizing: border-box;
+}
+
+.wpd-form-preview .wpd-form-row input:disabled {
+    cursor: not-allowed;
+}
+
+.wpd-form-preview .wpd-amount-container {
+    position: relative;
+}
+
+.wpd-form-preview .wpd-amount-container .wpd-currency-symbol {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-weight: bold;
+    color: #666;
+    z-index: 2;
+}
+
+.wpd-form-preview .wpd-amount-container input {
+    padding-left: 30px;
+    background: white;
+}
+
+.wpd-form-preview .wpd-amount-container input:focus {
+    outline: 1px solid #0073aa;
+    border-color: #0073aa;
+}
+
+.wpd-form-preview .wpd-quick-amounts {
+    display: flex;
+    gap: 8px;
+    margin: 15px 0;
+    flex-wrap: wrap;
+}
+
+.wpd-form-preview .wpd-quick-amount {
+    flex: 1;
+    min-width: 60px;
+    padding: 8px 12px;
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: not-allowed;
+    color: #999;
+}
+
+.wpd-form-preview .wpd-donate-btn {
+    width: 100%;
+    padding: 12px;
+    background: #0070ba;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: not-allowed;
+    opacity: 0.8;
+}
+
+.wpd-form-preview .wpd-security-info {
+    text-align: center;
+    margin-top: 10px;
+    color: #666;
+    font-size: 12px;
+}
+
+.wpd-form-preview .required {
+    color: #e74c3c;
+}
+
+/* Inspector controls styling */
+.components-panel__body .components-base-control .components-base-control__field {
+    margin-bottom: 16px;
+}
+
+/* Block icon styling in inserter */
+.wp-block-wp-paypal-donations-donation-form .block-editor-block-icon {
+    color: #e91e63;
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+    .wpd-donation-form-block-editor {
+        padding: 15px;
+    }
+    
+    .wpd-donation-form-block-editor .wpd-block-preview {
+        padding: 15px;
+    }
+    
+    .wpd-form-preview .wpd-quick-amounts {
+        flex-direction: column;
+    }
+    
+    .wpd-form-preview .wpd-quick-amount {
+        flex: none;
+        margin-bottom: 5px;
+    }
+}

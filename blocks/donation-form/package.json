@@ -1,0 +1,28 @@
+{
+  "name": "wp-paypal-donations-block",
+  "version": "1.0.0",
+  "description": "Gutenberg block for PayPal donations",
+  "main": "build/index.js",
+  "scripts": {
+    "build": "wp-scripts build",
+    "start": "wp-scripts start"
+  },
+  "keywords": [
+    "gutenberg",
+    "block",
+    "donation",
+    "paypal"
+  ],
+  "author": "WP PayPal Donations",
+  "license": "GPL-2.0-or-later",
+  "devDependencies": {
+    "@wordpress/scripts": "^26.0.0"
+  },
+  "dependencies": {
+    "@wordpress/block-editor": "^12.0.0",
+    "@wordpress/blocks": "^12.0.0",
+    "@wordpress/components": "^25.0.0",
+    "@wordpress/element": "^5.0.0",
+    "@wordpress/i18n": "^4.0.0"
+  }
+}

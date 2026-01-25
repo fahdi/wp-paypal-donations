@@ -1,0 +1,21 @@
+# Composer dependencies
+vendor/
+
+# Testing artifacts
+.phpunit.result.cache
+phpunit.xml.local
+
+# Development files
+.DS_Store
+*.log
+node_modules/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/

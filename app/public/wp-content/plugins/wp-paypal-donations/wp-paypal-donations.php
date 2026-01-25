@@ -33,6 +33,7 @@ class WP_PayPal_Donations {
         add_action('wp_ajax_process_donation', array($this, 'process_donation'));
         add_action('wp_ajax_nopriv_process_donation', array($this, 'process_donation'));
         add_action('init', array($this, 'handle_paypal_return'));
+        add_action('init', array($this, 'register_donation_block'));
         
         load_plugin_textdomain('wp-paypal-donations', false, dirname(plugin_basename(__FILE__)) . '/languages');
     }
@@ -358,6 +359,35 @@ You can view all donations in your WordPress admin dashboard under Donations.', 
         );
         
         wp_mail($admin_email, $subject, $message, $headers);
+    }
+    
+    public function register_donation_block() {
+        if (!function_exists('register_block_type')) {
+            return;
+        }
+        
+        wp_register_script(
+            'wp-paypal-donations-block',
+            WPD_PLUGIN_URL . 'blocks/donation-form/build/index.js',
+            array('wp-blocks', 'wp-i18n', 'wp-element', 'wp-components', 'wp-block-editor'),
+            WPD_VERSION,
+            true
+        );
+        
+        wp_register_style(
+            'wp-paypal-donations-block-editor',
+            WPD_PLUGIN_URL . 'blocks/donation-form/build/editor.css',
+            array('wp-edit-blocks'),
+            WPD_VERSION
+        );
+        
+        register_block_type(WPD_PLUGIN_PATH . 'blocks/donation-form/block.json', array(
+            'render_callback' => array($this, 'render_donation_block')
+        ));
+    }
+    
+    public function render_donation_block($attributes) {
+        return $this->donation_form_shortcode($attributes);
     }
 }
 

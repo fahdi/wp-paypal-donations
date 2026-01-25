@@ -6,6 +6,8 @@ if (!defined('ABSPATH')) {
 $currency = get_option('wpd_currency', 'USD');
 $currency_symbol = $this->get_currency_symbol($currency);
 $enable_recurring = get_option('wpd_enable_recurring', 0);
+$show_quick_amounts = isset($atts['showQuickAmounts']) ? $atts['showQuickAmounts'] : true;
+$button_text = isset($atts['buttonText']) ? $atts['buttonText'] : __('Donate with PayPal', 'wp-paypal-donations');
 ?>
 
 <div class="wpd-donation-form-container">
@@ -32,12 +34,14 @@ $enable_recurring = get_option('wpd_enable_recurring', 0);
             </div>
         </div>
         
+        <?php if ($show_quick_amounts): ?>
         <div class="wpd-quick-amounts">
             <button type="button" class="wpd-quick-amount" data-amount="10">$10</button>
             <button type="button" class="wpd-quick-amount" data-amount="25">$25</button>
             <button type="button" class="wpd-quick-amount" data-amount="50">$50</button>
             <button type="button" class="wpd-quick-amount" data-amount="100">$100</button>
         </div>
+        <?php endif; ?>
         
         <?php if ($enable_recurring): ?>
         <div class="wpd-form-row">
@@ -50,7 +54,7 @@ $enable_recurring = get_option('wpd_enable_recurring', 0);
         
         <div class="wpd-form-row">
             <button type="submit" class="wpd-donate-btn">
-                <span class="wpd-btn-text"><?php _e('Donate with PayPal', 'wp-paypal-donations'); ?></span>
+                <span class="wpd-btn-text"><?php echo esc_html($button_text); ?></span>
                 <span class="wpd-btn-loading" style="display: none;"><?php _e('Processing...', 'wp-paypal-donations'); ?></span>
             </button>
         </div>

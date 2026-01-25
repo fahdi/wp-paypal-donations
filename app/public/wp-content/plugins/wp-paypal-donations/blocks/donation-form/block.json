@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/block.json",
+  "apiVersion": 2,
+  "name": "wp-paypal-donations/donation-form",
+  "title": "Donation Form",
+  "category": "widgets",
+  "icon": "heart",
+  "description": "A customizable PayPal donation form with quick amount buttons and recurring donation options.",
+  "textdomain": "wp-paypal-donations",
+  "editorScript": "file:./build/index.js",
+  "editorStyle": "file:./build/editor.css",
+  "supports": {
+    "html": false,
+    "align": ["left", "center", "right", "wide", "full"]
+  },
+  "attributes": {
+    "amount": {
+      "type": "string",
+      "default": "25"
+    },
+    "title": {
+      "type": "string",
+      "default": "Make a Donation"
+    },
+    "showQuickAmounts": {
+      "type": "boolean",
+      "default": true
+    },
+    "buttonText": {
+      "type": "string",
+      "default": "Donate with PayPal"
+    }
+  },
+  "keywords": ["donation", "paypal", "fundraising", "charity"]
+}

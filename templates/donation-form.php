@@ -12,26 +12,37 @@ $button_text = isset($atts['buttonText']) ? $atts['buttonText'] : __('Donate wit
 
 <div class="wpd-donation-form-container">
     <form id="wpd-donation-form" class="wpd-donation-form">
-        <?php wp_nonce_field('wpd_nonce', 'wpd_nonce'); ?>
+        <?php wp_nonce_field('wpd_donation_form', 'wpd_nonce'); ?>
+        
+        <!-- Honeypot field for bot detection - hidden from users -->
+        <input type="text" name="wpd_website_url" style="display: none !important; visibility: hidden !important; position: absolute !important; left: -9999px !important;" tabindex="-1" autocomplete="off" />
         
         <h3 class="wpd-form-title"><?php echo esc_html($atts['title']); ?></h3>
         
         <div class="wpd-form-row">
             <label for="wpd-donor-name"><?php _e('Full Name', 'wp-paypal-donations'); ?> <span class="required">*</span></label>
-            <input type="text" id="wpd-donor-name" name="donor_name" required />
+            <input type="text" id="wpd-donor-name" name="donor_name" maxlength="100" pattern="[A-Za-z\s\-\.]+" title="<?php esc_attr_e('Please enter a valid name (letters, spaces, hyphens, and periods only)', 'wp-paypal-donations'); ?>" required />
         </div>
         
         <div class="wpd-form-row">
             <label for="wpd-donor-email"><?php _e('Email Address', 'wp-paypal-donations'); ?> <span class="required">*</span></label>
-            <input type="email" id="wpd-donor-email" name="donor_email" required />
+            <input type="email" id="wpd-donor-email" name="donor_email" maxlength="254" title="<?php esc_attr_e('Please enter a valid email address', 'wp-paypal-donations'); ?>" required />
+            <small class="wpd-field-help"><?php _e('We\'ll send your donation receipt to this email', 'wp-paypal-donations'); ?></small>
         </div>
         
         <div class="wpd-form-row">
             <label for="wpd-amount"><?php _e('Donation Amount', 'wp-paypal-donations'); ?> <span class="required">*</span></label>
             <div class="wpd-amount-container">
                 <span class="wpd-currency-symbol"><?php echo esc_html($currency_symbol); ?></span>
-                <input type="number" id="wpd-amount" name="amount" value="<?php echo esc_attr($atts['amount']); ?>" min="0.01" step="0.01" required />
+                <input type="number" id="wpd-amount" name="amount" value="<?php echo esc_attr($atts['amount']); ?>" min="1.00" max="10000.00" step="0.01" title="<?php esc_attr_e('Please enter an amount between $1.00 and $10,000.00', 'wp-paypal-donations'); ?>" required />
             </div>
+            <small class="wpd-field-help"><?php _e('Minimum $1.00, maximum $10,000.00', 'wp-paypal-donations'); ?></small>
+        </div>
+        
+        <div class="wpd-form-row">
+            <label for="wpd-message"><?php _e('Optional Message', 'wp-paypal-donations'); ?></label>
+            <textarea id="wpd-message" name="message" maxlength="500" placeholder="<?php esc_attr_e('Share why you\'re donating (optional)', 'wp-paypal-donations'); ?>"></textarea>
+            <small class="wpd-field-help"><?php _e('Maximum 500 characters', 'wp-paypal-donations'); ?></small>
         </div>
         
         <?php if ($show_quick_amounts): ?>

@@ -22,69 +22,104 @@ if (!class_exists('PHPUnit\Framework\TestCase')) {
 }
 
 // Give access to tests_add_filter() function.
-require_once $_tests_dir . '/includes/functions.php';
+if (file_exists($_tests_dir . '/includes/functions.php')) {
+    require_once $_tests_dir . '/includes/functions.php';
+} else {
+    // Mock tests_add_filter function if WordPress test environment not available
+    if (!function_exists('tests_add_filter')) {
+        function tests_add_filter($hook, $callback) {
+            // Store callbacks for later execution if needed
+            global $wp_filter_callbacks;
+            if (!isset($wp_filter_callbacks)) {
+                $wp_filter_callbacks = array();
+            }
+            $wp_filter_callbacks[$hook] = $callback;
+            return true;
+        }
+    }
+}
 
 /**
  * Manually load the plugin being tested.
  */
 function _manually_load_plugin() {
     // Set up WordPress environment for testing
-    define('WPD_PLUGIN_PATH', dirname(__DIR__) . '/');
-    define('WPD_PLUGIN_URL', 'http://example.org/wp-content/plugins/wp-paypal-donations/');
-    define('WPD_VERSION', '1.0.0');
+    if (!defined('WPD_PLUGIN_PATH')) {
+        define('WPD_PLUGIN_PATH', dirname(__DIR__) . '/');
+    }
+    if (!defined('WPD_PLUGIN_URL')) {
+        define('WPD_PLUGIN_URL', 'http://example.org/wp-content/plugins/wp-paypal-donations/');
+    }
+    if (!defined('WPD_VERSION')) {
+        define('WPD_VERSION', '1.0.0');
+    }
+    
+    // Mock WordPress functions that the plugin uses
+    if (!function_exists('plugin_dir_url')) {
+        function plugin_dir_url($file) {
+            return 'http://example.org/wp-content/plugins/wp-paypal-donations/';
+        }
+    }
+    
+    if (!function_exists('plugin_dir_path')) {
+        function plugin_dir_path($file) {
+            return dirname(__DIR__) . '/';
+        }
+    }
+    
+    if (!function_exists('plugin_basename')) {
+        function plugin_basename($file) {
+            return 'wp-paypal-donations/wp-paypal-donations.php';
+        }
+    }
+    
+    if (!function_exists('register_activation_hook')) {
+        function register_activation_hook($file, $callback) {
+            // Mock activation hook
+        }
+    }
+    
+    if (!function_exists('register_deactivation_hook')) {
+        function register_deactivation_hook($file, $callback) {
+            // Mock deactivation hook
+        }
+    }
+    
+    if (!function_exists('load_plugin_textdomain')) {
+        function load_plugin_textdomain($domain, $deprecated, $plugin_rel_path) {
+            return true;
+        }
+    }
     
     require dirname(__DIR__) . '/wp-paypal-donations.php';
 }
-tests_add_filter('muplugins_loaded', '_manually_load_plugin');
-
-// Mock WordPress functions for isolated unit tests
-if (!function_exists('wp_die')) {
-    function wp_die($message = '', $title = '', $args = array()) {
-        throw new Exception($message);
-    }
+// Execute callback immediately if WordPress test environment not available
+if (function_exists('tests_add_filter')) {
+    tests_add_filter('muplugins_loaded', '_manually_load_plugin');
+} else {
+    // Execute manually if WordPress test environment not available
+    _manually_load_plugin();
 }
 
-if (!function_exists('wp_send_json_success')) {
-    function wp_send_json_success($data = null) {
-        return json_encode(array('success' => true, 'data' => $data));
-    }
-}
-
-if (!function_exists('wp_send_json_error')) {
-    function wp_send_json_error($data = null) {
-        return json_encode(array('success' => false, 'data' => $data));
-    }
-}
+// WordPress functions will be mocked by Brain Monkey in individual test files
 
 // Start up the WP testing environment.
 if (file_exists($_tests_dir . '/includes/bootstrap.php')) {
     require $_tests_dir . '/includes/bootstrap.php';
 } else {
     // Fallback for when WordPress test environment is not available
-    echo "Warning: WordPress test environment not found. Some tests may fail.\n";
+    echo "Warning: WordPress test environment not found. Using Brain Monkey for mocking.\n";
     
-    // Mock essential WordPress functions
-    if (!function_exists('add_action')) {
-        function add_action($hook, $callback, $priority = 10, $accepted_args = 1) {
-            return true;
-        }
+    // Define essential WordPress constants if not already defined
+    if (!defined('ABSPATH')) {
+        define('ABSPATH', '/tmp/wordpress/');
     }
     
-    if (!function_exists('add_filter')) {
-        function add_filter($hook, $callback, $priority = 10, $accepted_args = 1) {
-            return true;
-        }
+    if (!defined('WP_CONTENT_DIR')) {
+        define('WP_CONTENT_DIR', ABSPATH . 'wp-content');
     }
     
-    if (!function_exists('get_option')) {
-        function get_option($option, $default = false) {
-            return $default;
-        }
-    }
-    
-    if (!function_exists('update_option')) {
-        function update_option($option, $value, $autoload = null) {
-            return true;
-        }
+    if (!defined('WP_PLUGIN_DIR')) {
+        define('WP_PLUGIN_DIR', WP_CONTENT_DIR . '/plugins');
     }
 }

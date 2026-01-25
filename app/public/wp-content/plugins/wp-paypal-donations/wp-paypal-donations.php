@@ -29,6 +29,9 @@ class WP_PayPal_Donations {
         // Include the PayPal REST API class
         require_once WPD_PLUGIN_PATH . 'includes/class-paypal-rest-api.php';
         $this->paypal_api = new WPD_PayPal_REST_API();
+        
+        // Include the enhanced donations list table class
+        require_once WPD_PLUGIN_PATH . 'includes/class-donations-list-table.php';
     }
     
     public function init() {
@@ -331,7 +334,124 @@ class WP_PayPal_Donations {
     }
     
     public function admin_page() {
+        // Handle export actions
+        $this->handle_admin_actions();
+        
         include WPD_PLUGIN_PATH . 'admin/donations-list.php';
+    }
+    
+    private function handle_admin_actions() {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
+        $action = isset($_GET['action']) ? sanitize_text_field($_GET['action']) : '';
+
+        switch ($action) {
+            case 'export_all_csv':
+                if (!wp_verify_nonce($_GET['_wpnonce'], 'export_all_csv')) {
+                    wp_die(__('Security check failed', 'wp-paypal-donations'));
+                }
+                $this->export_all_donations('csv');
+                break;
+
+            case 'export_all_excel':
+                if (!wp_verify_nonce($_GET['_wpnonce'], 'export_all_excel')) {
+                    wp_die(__('Security check failed', 'wp-paypal-donations'));
+                }
+                $this->export_all_donations('excel');
+                break;
+        }
+    }
+
+    private function export_all_donations($format = 'csv') {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'donations';
+
+        // Get all donations
+        $donations = $wpdb->get_results("SELECT * FROM {$table_name} ORDER BY donation_date DESC", ARRAY_A);
+
+        if (empty($donations)) {
+            wp_die(__('No donations found for export.', 'wp-paypal-donations'));
+        }
+
+        $filename = 'all_donations_' . date('Y-m-d_H-i-s');
+
+        if ($format === 'csv') {
+            $this->generate_csv_export($donations, $filename);
+        } else {
+            $this->generate_excel_export($donations, $filename);
+        }
+    }
+
+    private function generate_csv_export($donations, $filename) {
+        $filename .= '.csv';
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename=' . $filename);
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        $output = fopen('php://output', 'w');
+
+        // Add CSV headers
+        $headers = array(
+            'ID',
+            'Donor Name',
+            'Email',
+            'Amount',
+            'Currency',
+            'Status',
+            'Transaction ID',
+            'Date'
+        );
+        fputcsv($output, $headers);
+
+        // Add data rows
+        foreach ($donations as $donation) {
+            $row = array(
+                $donation['id'],
+                $donation['donor_name'],
+                $donation['donor_email'],
+                $donation['amount'],
+                $donation['currency'],
+                $donation['payment_status'],
+                $donation['transaction_id'],
+                $donation['donation_date']
+            );
+            fputcsv($output, $row);
+        }
+
+        fclose($output);
+        exit;
+    }
+
+    private function generate_excel_export($donations, $filename) {
+        $filename .= '.xls';
+
+        header('Content-Type: application/vnd.ms-excel; charset=utf-8');
+        header('Content-Disposition: attachment; filename=' . $filename);
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        echo "\xEF\xBB\xBF"; // UTF-8 BOM
+
+        // Add headers
+        echo "ID\tDonor Name\tEmail\tAmount\tCurrency\tStatus\tTransaction ID\tDate\n";
+
+        // Add data rows
+        foreach ($donations as $donation) {
+            echo $donation['id'] . "\t" .
+                 $donation['donor_name'] . "\t" .
+                 $donation['donor_email'] . "\t" .
+                 $donation['amount'] . "\t" .
+                 $donation['currency'] . "\t" .
+                 $donation['payment_status'] . "\t" .
+                 $donation['transaction_id'] . "\t" .
+                 $donation['donation_date'] . "\n";
+        }
+
+        exit;
     }
     
     public function settings_page() {

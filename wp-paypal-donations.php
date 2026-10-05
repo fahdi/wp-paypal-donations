@@ -347,46 +347,112 @@ class WP_PayPal_Donations {
     public function process_ipn($postdata, $ipn) {
         $req = 'cmd=_notify-validate&' . $postdata;
         
-        $paypal_url = $this->get_paypal_url();
-        
-        $response = wp_remote_post($paypal_url, array(
+        $response = wp_remote_post($this->get_ipn_postback_url(), array(
             'body' => $req,
             'timeout' => 30,
-            'sslverify' => false
+            'httpversion' => '1.1',
+            'user-agent' => 'WP-PayPal-Donations/' . WPD_VERSION
         ));
         
         if (is_wp_error($response)) {
             return false;
         }
         
-        if (wp_remote_retrieve_body($response) === 'VERIFIED') {
-            $payment_status = sanitize_text_field($ipn['payment_status'] ?? '');
-            $txn_id = sanitize_text_field($ipn['txn_id'] ?? '');
-            $custom = intval($ipn['custom'] ?? 0);
-            
-            if ($payment_status === 'Completed') {
-                global $wpdb;
-                $table_name = $wpdb->prefix . 'donations';
-                
-                $wpdb->update(
-                    $table_name,
-                    array(
-                        'payment_status' => 'completed',
-                        'transaction_id' => $txn_id,
-                        'paypal_response' => serialize($ipn)
-                    ),
-                    array('id' => $custom),
-                    array('%s', '%s', '%s'),
-                    array('%d')
-                );
-                
-                // Send notification emails
-                $this->send_donation_notifications($custom);
-                return true;
-            }
+        if (wp_remote_retrieve_body($response) !== 'VERIFIED') {
+            return false;
         }
         
-        return false;
+        $payment_status = sanitize_text_field($ipn['payment_status'] ?? '');
+        $txn_id = sanitize_text_field($ipn['txn_id'] ?? '');
+        $custom = intval($ipn['custom'] ?? 0);
+        
+        if ($payment_status !== 'Completed' || $txn_id === '' || $custom <= 0) {
+            return false;
+        }
+        
+        // A sandbox IPN must never complete a donation on a live site (and vice versa).
+        $sandbox_mode = (bool) get_option('wpd_sandbox_mode', false);
+        if (!empty($ipn['test_ipn']) !== $sandbox_mode) {
+            $this->log_ipn_rejection($custom, 'test_ipn flag does not match sandbox mode');
+            return false;
+        }
+        
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'donations';
+        
+        $donation = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table_name} WHERE id = %d", $custom));
+        if (!$donation) {
+            $this->log_ipn_rejection($custom, 'unknown donation id');
+            return false;
+        }
+        
+        // The payment must have been made to *our* PayPal account.
+        $receiver = strtolower(trim($ipn['receiver_email'] ?? ($ipn['business'] ?? '')));
+        $expected_receiver = strtolower(trim((string) get_option('wpd_paypal_email', '')));
+        if ($receiver === '' || $expected_receiver === '' || $receiver !== $expected_receiver) {
+            $this->log_ipn_rejection($custom, 'receiver_email mismatch');
+            return false;
+        }
+        
+        // Amount and currency must match what the donor asked to give.
+        $currency = strtoupper(sanitize_text_field($ipn['mc_currency'] ?? ''));
+        if ($currency !== strtoupper((string) $donation->currency)) {
+            $this->log_ipn_rejection($custom, 'currency mismatch');
+            return false;
+        }
+        
+        $gross = floatval($ipn['mc_gross'] ?? 0);
+        if (abs($gross - floatval($donation->amount)) >= 0.005) {
+            $this->log_ipn_rejection($custom, 'amount mismatch');
+            return false;
+        }
+        
+        // Replay protection: never complete the same donation twice, and never
+        // let one PayPal transaction complete two donation records.
+        if ($donation->payment_status === 'completed') {
+            $this->log_ipn_rejection($custom, 'donation already completed');
+            return false;
+        }
+        
+        $duplicate = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$table_name} WHERE transaction_id = %s AND id != %d LIMIT 1",
+            $txn_id,
+            $custom
+        ));
+        if ($duplicate) {
+            $this->log_ipn_rejection($custom, 'txn_id already used by donation ' . intval($duplicate));
+            return false;
+        }
+        
+        $wpdb->update(
+            $table_name,
+            array(
+                'payment_status' => 'completed',
+                'transaction_id' => $txn_id,
+                'paypal_response' => serialize($ipn)
+            ),
+            array('id' => $custom),
+            array('%s', '%s', '%s'),
+            array('%d')
+        );
+        
+        // Send notification emails
+        $this->send_donation_notifications($custom);
+        return true;
+    }
+    
+    /**
+     * PayPal's dedicated IPN postback host (TLS verification stays enabled).
+     */
+    private function get_ipn_postback_url() {
+        $sandbox_mode = get_option('wpd_sandbox_mode', false);
+        return $sandbox_mode
+            ? 'https://ipnpb.sandbox.paypal.com/cgi-bin/webscr'
+            : 'https://ipnpb.paypal.com/cgi-bin/webscr';
+    }
+    
+    private function log_ipn_rejection($donation_id, $reason) {
+        error_log(sprintf('WP PayPal Donations: IPN for donation %d rejected: %s', $donation_id, $reason));
     }
     
     public function admin_page() {

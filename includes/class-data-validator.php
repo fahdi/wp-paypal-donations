@@ -358,7 +358,7 @@ class WPD_Data_Validator {
      */
     private static function contains_xss_patterns($input) {
         $xss_patterns = array(
-            '/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi',
+            '/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/i',
             '/javascript:/i',
             '/on\w+\s*=/i',
             '/<iframe/i',

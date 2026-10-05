@@ -514,6 +514,44 @@ class WP_PayPal_Donations {
         include WPD_PLUGIN_PATH . 'admin/settings-page.php';
     }
     
+    /**
+     * Persist the settings form. Dies unless the request carries a valid
+     * nonce and comes from a user who may manage options.
+     *
+     * @param array $post Submitted form fields (normally $_POST).
+     * @return bool True when the options were saved.
+     */
+    public function save_settings($post) {
+        $nonce = isset($post['_wpnonce']) ? (string) $post['_wpnonce'] : '';
+        
+        if (!current_user_can('manage_options') || !wp_verify_nonce($nonce, 'wpd_settings_nonce')) {
+            wp_die(__('Security check failed', 'wp-paypal-donations'));
+            return false;
+        }
+        
+        $payment_method = isset($post['wpd_payment_method']) ? sanitize_text_field($post['wpd_payment_method']) : 'standard';
+        if (!in_array($payment_method, array('standard', 'rest_api'), true)) {
+            $payment_method = 'standard';
+        }
+        
+        $currency = isset($post['wpd_currency']) ? strtoupper(sanitize_text_field($post['wpd_currency'])) : 'USD';
+        if (!in_array($currency, array('USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD'), true)) {
+            $currency = 'USD';
+        }
+        
+        update_option('wpd_paypal_email', sanitize_email($post['wpd_paypal_email'] ?? ''));
+        update_option('wpd_sandbox_mode', isset($post['wpd_sandbox_mode']) ? 1 : 0);
+        update_option('wpd_currency', $currency);
+        update_option('wpd_default_amount', floatval($post['wpd_default_amount'] ?? 0));
+        update_option('wpd_success_message', sanitize_textarea_field($post['wpd_success_message'] ?? ''));
+        update_option('wpd_enable_recurring', isset($post['wpd_enable_recurring']) ? 1 : 0);
+        update_option('wpd_paypal_client_id', sanitize_text_field($post['wpd_paypal_client_id'] ?? ''));
+        update_option('wpd_paypal_client_secret', sanitize_text_field($post['wpd_paypal_client_secret'] ?? ''));
+        update_option('wpd_payment_method', $payment_method);
+        
+        return true;
+    }
+    
     public function analytics_page() {
         include WPD_PLUGIN_PATH . 'admin/analytics-dashboard.php';
     }

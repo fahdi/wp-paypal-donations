@@ -4,17 +4,10 @@ if (!defined('ABSPATH')) {
 }
 
 if (isset($_POST['submit'])) {
-    update_option('wpd_paypal_email', sanitize_email($_POST['wpd_paypal_email']));
-    update_option('wpd_sandbox_mode', isset($_POST['wpd_sandbox_mode']) ? 1 : 0);
-    update_option('wpd_currency', sanitize_text_field($_POST['wpd_currency']));
-    update_option('wpd_default_amount', floatval($_POST['wpd_default_amount']));
-    update_option('wpd_success_message', sanitize_textarea_field($_POST['wpd_success_message']));
-    update_option('wpd_enable_recurring', isset($_POST['wpd_enable_recurring']) ? 1 : 0);
-    update_option('wpd_paypal_client_id', sanitize_text_field($_POST['wpd_paypal_client_id']));
-    update_option('wpd_paypal_client_secret', sanitize_text_field($_POST['wpd_paypal_client_secret']));
-    update_option('wpd_payment_method', sanitize_text_field($_POST['wpd_payment_method']));
-    
-    echo '<div class="notice notice-success"><p>' . __('Settings saved!', 'wp-paypal-donations') . '</p></div>';
+    // Nonce + capability are verified inside save_settings(); it wp_die()s on failure.
+    if ($this->save_settings($_POST)) {
+        echo '<div class="notice notice-success"><p>' . esc_html__('Settings saved!', 'wp-paypal-donations') . '</p></div>';
+    }
 }
 
 $paypal_email = get_option('wpd_paypal_email', '');
@@ -23,9 +16,9 @@ $currency = get_option('wpd_currency', 'USD');
 $default_amount = get_option('wpd_default_amount', '25');
 $success_message = get_option('wpd_success_message', __('Thank you for your donation!', 'wp-paypal-donations'));
 $enable_recurring = get_option('wpd_enable_recurring', 0);
-$paypal_client_id = get_option('wpd_paypal_client_id', 'Af_8jpwQ0WWKhd4yAdu6QlLl1UO-V39g-sjIbAJMJ5M29REYrujHYGIDHXGOuIQvouaDRkU-bgYChIv7');
-$paypal_client_secret = get_option('wpd_paypal_client_secret', 'ECQ61mmOEG7bOdnPnjFOtxuD3q1OhJIcx7yyu_Ux78xM5zJLOoeV8EJfb0fkuo1EulQEQHAg7e0cXM0I');
-$payment_method = get_option('wpd_payment_method', 'rest_api');
+$paypal_client_id = get_option('wpd_paypal_client_id', '');
+$paypal_client_secret = get_option('wpd_paypal_client_secret', '');
+$payment_method = get_option('wpd_payment_method', 'standard');
 ?>
 
 <div class="wrap">

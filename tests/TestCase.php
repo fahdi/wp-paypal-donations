@@ -150,7 +150,9 @@ abstract class TestCase extends PHPUnitTestCase {
             'custom' => '1',
             'mc_gross' => '25.00',
             'mc_currency' => 'USD',
-            'payer_email' => 'buyer@example.com'
+            'receiver_email' => 'business@example.com',
+            'payer_email' => 'buyer@example.com',
+            'test_ipn' => '1' // sandbox IPNs always carry this flag
         );
 
         return array_merge($defaults, $data);

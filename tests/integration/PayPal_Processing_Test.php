@@ -123,14 +123,115 @@ class PayPal_Processing_Test extends TestCase {
     /**
      * Mock the sandbox-mode option used to pick the PayPal host.
      */
-    private function mockSandboxOption() {
+    private function mockSandboxOption($sandbox = true) {
         Monkey\Functions\when('get_option')
-            ->alias(function($option, $default = false) {
+            ->alias(function($option, $default = false) use ($sandbox) {
                 if ($option === 'wpd_sandbox_mode') {
-                    return true;
+                    return $sandbox;
+                }
+                if ($option === 'wpd_paypal_email') {
+                    return 'business@example.com';
                 }
                 return $default;
             });
+    }
+
+    /**
+     * wpdb mock whose first get_row() returns the given pending donation and
+     * which must never be asked to update anything.
+     */
+    private function wpdbRejecting($donation) {
+        $wpdb = $this->mockWpdb();
+        $wpdb->method('get_row')->willReturn($donation);
+        $wpdb->expects($this->never())->method('update');
+        return $wpdb;
+    }
+
+    private function verifiedPostback() {
+        Monkey\Functions\when('wp_remote_post')
+            ->justReturn(array('body' => 'VERIFIED', 'response' => array('code' => 200)));
+    }
+
+    public function test_ipn_rejects_wrong_receiver_email() {
+        $ipn = $this->createMockIPNRequest(array('receiver_email' => 'attacker@evil.com'));
+        $this->mockSandboxOption();
+        $this->verifiedPostback();
+        $this->wpdbRejecting($this->createMockDonation(array('payment_status' => 'pending')));
+
+        $this->assertFalse($this->plugin->process_ipn($this->ipnBody($ipn), $ipn));
+    }
+
+    public function test_ipn_rejects_amount_mismatch() {
+        $ipn = $this->createMockIPNRequest(array('mc_gross' => '1.00'));
+        $this->mockSandboxOption();
+        $this->verifiedPostback();
+        $this->wpdbRejecting($this->createMockDonation(array('payment_status' => 'pending', 'amount' => 10000.00)));
+
+        $this->assertFalse($this->plugin->process_ipn($this->ipnBody($ipn), $ipn));
+    }
+
+    public function test_ipn_rejects_currency_mismatch() {
+        $ipn = $this->createMockIPNRequest(array('mc_currency' => 'JPY'));
+        $this->mockSandboxOption();
+        $this->verifiedPostback();
+        $this->wpdbRejecting($this->createMockDonation(array('payment_status' => 'pending', 'currency' => 'USD')));
+
+        $this->assertFalse($this->plugin->process_ipn($this->ipnBody($ipn), $ipn));
+    }
+
+    public function test_ipn_rejects_replayed_message_for_completed_donation() {
+        $ipn = $this->createMockIPNRequest();
+        $this->mockSandboxOption();
+        $this->verifiedPostback();
+        $this->wpdbRejecting($this->createMockDonation(array('payment_status' => 'completed', 'transaction_id' => 'TEST123')));
+
+        $this->assertFalse($this->plugin->process_ipn($this->ipnBody($ipn), $ipn));
+    }
+
+    public function test_ipn_rejects_txn_id_already_used_by_another_donation() {
+        $ipn = $this->createMockIPNRequest();
+        $this->mockSandboxOption();
+        $this->verifiedPostback();
+        $wpdb = $this->wpdbRejecting($this->createMockDonation(array('payment_status' => 'pending')));
+        $wpdb->method('get_var')->willReturn('99'); // another row already has TEST123
+
+        $this->assertFalse($this->plugin->process_ipn($this->ipnBody($ipn), $ipn));
+    }
+
+    public function test_ipn_rejects_unknown_donation_id() {
+        $ipn = $this->createMockIPNRequest(array('custom' => '4812'));
+        $this->mockSandboxOption();
+        $this->verifiedPostback();
+        $this->wpdbRejecting(null);
+
+        $this->assertFalse($this->plugin->process_ipn($this->ipnBody($ipn), $ipn));
+    }
+
+    public function test_ipn_rejects_sandbox_message_in_live_mode() {
+        $ipn = $this->createMockIPNRequest(array('test_ipn' => '1'));
+        $this->mockSandboxOption(false);
+        $this->verifiedPostback();
+        $this->wpdbRejecting($this->createMockDonation(array('payment_status' => 'pending')));
+
+        $this->assertFalse($this->plugin->process_ipn($this->ipnBody($ipn), $ipn));
+    }
+
+    public function test_ipn_postback_uses_ipnpb_host_with_tls_verification() {
+        $ipn = $this->createMockIPNRequest();
+        $this->mockSandboxOption();
+        $this->wpdbRejecting(null);
+
+        $calls = array();
+        Monkey\Functions\when('wp_remote_post')->alias(function ($url, $args) use (&$calls) {
+            $calls[] = array($url, $args);
+            return array('body' => 'INVALID', 'response' => array('code' => 200));
+        });
+
+        $this->assertFalse($this->plugin->process_ipn($this->ipnBody($ipn), $ipn));
+
+        $this->assertCount(1, $calls);
+        $this->assertSame('https://ipnpb.sandbox.paypal.com/cgi-bin/webscr', $calls[0][0]);
+        $this->assertTrue(!isset($calls[0][1]['sslverify']) || $calls[0][1]['sslverify'] === true, 'sslverify must not be disabled');
     }
 
     /**
@@ -154,8 +255,11 @@ class PayPal_Processing_Test extends TestCase {
                  array('id' => 1)
              )
              ->willReturn(1);
-        // send_donation_notifications() loads the row; return nothing so no mail is sent.
-        $wpdb->method('get_row')->willReturn(null);
+        // First get_row() is the verification lookup; the second (notifications) returns nothing so no mail is sent.
+        $wpdb->method('get_row')->willReturnOnConsecutiveCalls(
+            $this->createMockDonation(array('payment_status' => 'pending', 'amount' => 25.00, 'currency' => 'USD')),
+            null
+        );
 
         $this->assertTrue($this->plugin->process_ipn($this->ipnBody($ipn), $ipn));
     }

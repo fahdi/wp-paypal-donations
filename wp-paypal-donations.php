@@ -295,32 +295,89 @@ class WP_PayPal_Donations {
         $payer_id = sanitize_text_field($_GET['PayerID']);
         $donation_id = isset($_GET['donation_id']) ? intval($_GET['donation_id']) : 0;
         
-        if (!$token || !$payer_id) {
-            return;
+        $this->complete_rest_donation($token, $payer_id, $donation_id);
+    }
+    
+    /**
+     * Capture an approved PayPal order and complete the matching donation.
+     *
+     * The order token must be the one stored on the donation when it was
+     * created, the donation must still be pending, and the captured amount
+     * and currency must equal what the donor asked to give.
+     *
+     * @param string $token       PayPal order id returned in the approval redirect.
+     * @param string $payer_id    PayPal payer id returned in the approval redirect.
+     * @param int    $donation_id Donation row the redirect claims to belong to.
+     * @return bool True when the donation was marked completed.
+     */
+    public function complete_rest_donation($token, $payer_id, $donation_id) {
+        $token = (string) $token;
+        $donation_id = intval($donation_id);
+        
+        if ($token === '' || (string) $payer_id === '' || $donation_id <= 0) {
+            return false;
+        }
+        
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'donations';
+        
+        $donation = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table_name} WHERE id = %d", $donation_id));
+        if (!$donation) {
+            $this->log_rest_rejection($donation_id, 'unknown donation id');
+            return false;
+        }
+        
+        if ($donation->payment_status !== 'pending') {
+            $this->log_rest_rejection($donation_id, 'donation is not pending');
+            return false;
+        }
+        
+        if ((string) $donation->transaction_id !== $token) {
+            $this->log_rest_rejection($donation_id, 'order token does not belong to this donation');
+            return false;
         }
         
         // For PayPal REST API, the token is the order ID
         $result = $this->paypal_api->capture_payment($token);
-        
-        if ($result['success']) {
-            global $wpdb;
-            $table_name = $wpdb->prefix . 'donations';
-            
-            $wpdb->update(
-                $table_name,
-                array(
-                    'payment_status' => 'completed',
-                    'transaction_id' => $result['transaction_id'],
-                    'paypal_response' => serialize($result['data'])
-                ),
-                array('id' => $donation_id),
-                array('%s', '%s', '%s'),
-                array('%d')
-            );
-            
-            // Send notification emails
-            $this->send_donation_notifications($donation_id);
+        if (empty($result['success'])) {
+            return false;
         }
+        
+        $captured = $result['data']['purchase_units'][0]['payments']['captures'][0]['amount'] ?? null;
+        if (!is_array($captured) || !isset($captured['value'], $captured['currency_code'])) {
+            $this->log_rest_rejection($donation_id, 'capture response has no amount');
+            return false;
+        }
+        
+        if (strtoupper($captured['currency_code']) !== strtoupper((string) $donation->currency)) {
+            $this->log_rest_rejection($donation_id, 'captured currency mismatch');
+            return false;
+        }
+        
+        if (abs(floatval($captured['value']) - floatval($donation->amount)) >= 0.005) {
+            $this->log_rest_rejection($donation_id, 'captured amount mismatch');
+            return false;
+        }
+        
+        $wpdb->update(
+            $table_name,
+            array(
+                'payment_status' => 'completed',
+                'transaction_id' => $result['transaction_id'],
+                'paypal_response' => serialize($result['data'])
+            ),
+            array('id' => $donation_id),
+            array('%s', '%s', '%s'),
+            array('%d')
+        );
+        
+        // Send notification emails
+        $this->send_donation_notifications($donation_id);
+        return true;
+    }
+    
+    private function log_rest_rejection($donation_id, $reason) {
+        error_log(sprintf('WP PayPal Donations: REST return for donation %d rejected: %s', $donation_id, $reason));
     }
     
     public function show_success_message() {

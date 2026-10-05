@@ -79,7 +79,7 @@ class PayPal_Processing_Test extends TestCase {
         // Mock JSON response
         Monkey\Functions\expect('wp_send_json_success')
             ->once()
-            ->with(Monkey\Functions\type('array'));
+            ->with(\Mockery::type('array'));
 
         $this->plugin->process_donation();
     }
@@ -88,8 +88,6 @@ class PayPal_Processing_Test extends TestCase {
      * Test donation processing with missing required fields
      */
     public function test_process_donation_missing_fields() {
-        Monkey\Functions\when('check_ajax_referer')->justReturn(true);
-        
         // Missing donor name
         $_POST = array(
             'amount' => '25.00',
@@ -97,107 +95,85 @@ class PayPal_Processing_Test extends TestCase {
             'nonce' => 'test_nonce'
         );
 
-        Monkey\Functions\expect('wp_die')
-            ->once()
-            ->with('Please fill in all required fields.');
+        Monkey\Functions\when('wp_privacy_anonymize_data')->justReturn('***');
+        Monkey\Functions\when('wp_strip_all_tags')->returnArg();
+        Monkey\Functions\when('is_email')->alias(function ($email) {
+            return (bool) filter_var($email, FILTER_VALIDATE_EMAIL);
+        });
 
-        $this->expectException(\Exception::class);
+        Monkey\Functions\expect('wp_send_json_error')
+            ->once()
+            ->with(\Mockery::type('array'))
+            ->andReturnUsing(function () {
+                throw new \RuntimeException('json_error');
+            });
+        Monkey\Functions\expect('wp_send_json_success')->never();
+
+        $this->expectException(\RuntimeException::class);
         $this->plugin->process_donation();
+    }
+
+    /**
+     * Build the raw body PayPal would post for an IPN array.
+     */
+    private function ipnBody(array $ipn) {
+        return http_build_query($ipn);
+    }
+
+    /**
+     * Mock the sandbox-mode option used to pick the PayPal host.
+     */
+    private function mockSandboxOption() {
+        Monkey\Functions\when('get_option')
+            ->alias(function($option, $default = false) {
+                if ($option === 'wpd_sandbox_mode') {
+                    return true;
+                }
+                return $default;
+            });
     }
 
     /**
      * Test IPN handling with valid PayPal response
      */
     public function test_handle_ipn_valid_response() {
-        // Mock PayPal IPN data
-        $_POST = $this->createMockIPNRequest();
-        $_GET['wpd_ipn'] = '1';
+        $ipn = $this->createMockIPNRequest();
+        $this->mockSandboxOption();
 
-        // Mock HTTP response from PayPal
         Monkey\Functions\when('wp_remote_post')
-            ->justReturn(array(
-                'body' => 'VERIFIED',
-                'response' => array('code' => 200)
-            ));
+            ->justReturn(array('body' => 'VERIFIED', 'response' => array('code' => 200)));
 
-        Monkey\Functions\when('wp_remote_retrieve_body')
-            ->justReturn('VERIFIED');
-
-        // Mock settings
-        Monkey\Functions\when('get_option')
-            ->alias(function($option, $default = false) {
-                if ($option === 'wpd_sandbox_mode') {
-                    return true;
-                }
-                return $default;
-            });
-
-        // Mock database update
         $wpdb = $this->mockWpdb();
         $wpdb->expects($this->once())
              ->method('update')
+             ->with(
+                 'wp_donations',
+                 $this->callback(function ($data) {
+                     return $data['payment_status'] === 'completed' && $data['transaction_id'] === 'TEST123';
+                 }),
+                 array('id' => 1)
+             )
              ->willReturn(1);
+        // send_donation_notifications() loads the row; return nothing so no mail is sent.
+        $wpdb->method('get_row')->willReturn(null);
 
-        global $wpdb;
-
-        // Mock notification sending
-        $reflection = new \ReflectionClass($this->plugin);
-        $sendNotifications = $reflection->getMethod('send_donation_notifications');
-        $sendNotifications->setAccessible(true);
-
-        // Create a mock that expects the notification method to be called
-        $plugin_mock = $this->getMockBuilder(\WP_PayPal_Donations::class)
-                            ->onlyMethods(['send_donation_notifications'])
-                            ->getMock();
-        
-        $plugin_mock->expects($this->once())
-                    ->method('send_donation_notifications')
-                    ->with(1);
-
-        // We can't easily test the private method, so we'll test the public interface
-        $this->expectOutputString(''); // IPN handler should exit with no output
-        
-        // Mock the exit to prevent actual exit
-        Monkey\Functions\when('exit')->justReturn(null);
-        
-        $this->plugin->handle_paypal_return();
+        $this->assertTrue($this->plugin->process_ipn($this->ipnBody($ipn), $ipn));
     }
 
     /**
      * Test IPN handling with invalid PayPal response
      */
     public function test_handle_ipn_invalid_response() {
-        $_POST = $this->createMockIPNRequest();
-        $_GET['wpd_ipn'] = '1';
+        $ipn = $this->createMockIPNRequest();
+        $this->mockSandboxOption();
 
-        // Mock HTTP response from PayPal - INVALID
         Monkey\Functions\when('wp_remote_post')
-            ->justReturn(array(
-                'body' => 'INVALID',
-                'response' => array('code' => 200)
-            ));
+            ->justReturn(array('body' => 'INVALID', 'response' => array('code' => 200)));
 
-        Monkey\Functions\when('wp_remote_retrieve_body')
-            ->justReturn('INVALID');
-
-        Monkey\Functions\when('get_option')
-            ->alias(function($option, $default = false) {
-                if ($option === 'wpd_sandbox_mode') {
-                    return true;
-                }
-                return $default;
-            });
-
-        // Database should not be updated for invalid IPN
         $wpdb = $this->mockWpdb();
-        $wpdb->expects($this->never())
-             ->method('update');
+        $wpdb->expects($this->never())->method('update');
 
-        global $wpdb;
-
-        Monkey\Functions\when('exit')->justReturn(null);
-        
-        $this->plugin->handle_paypal_return();
+        $this->assertFalse($this->plugin->process_ipn($this->ipnBody($ipn), $ipn));
     }
 
     /**
@@ -237,9 +213,13 @@ class PayPal_Processing_Test extends TestCase {
             });
 
         Monkey\Functions\when('add_query_arg')
-            ->alias(function($args, $url) {
+            ->alias(function($args, $url = '', $extra = null) {
+                // add_query_arg('key', 'value', $url) form
+                if (!is_array($args)) {
+                    return $extra . '?' . $args . '=' . $url;
+                }
                 // Check if recurring parameters are included
-                if (is_array($args) && isset($args['cmd'])) {
+                if (isset($args['cmd'])) {
                     $this->assertEquals('_xclick-subscriptions', $args['cmd']);
                     $this->assertEquals(1, $args['p3']);
                     $this->assertEquals('M', $args['t3']);
@@ -252,7 +232,7 @@ class PayPal_Processing_Test extends TestCase {
         
         Monkey\Functions\expect('wp_send_json_success')
             ->once()
-            ->with(Monkey\Functions\type('array'));
+            ->with(\Mockery::type('array'));
 
         $this->plugin->process_donation();
     }
@@ -263,11 +243,9 @@ class PayPal_Processing_Test extends TestCase {
     public function test_handle_paypal_success_return() {
         $_GET['donation_success'] = '1';
 
-        Monkey\Functions\expect('add_action')
-            ->once()
-            ->with('wp_footer', array($this->plugin, 'show_success_message'));
-
         $this->plugin->handle_paypal_return();
+
+        $this->assertNotFalse(has_action('wp_footer', array($this->plugin, 'show_success_message')));
     }
 
     /**
@@ -276,11 +254,9 @@ class PayPal_Processing_Test extends TestCase {
     public function test_handle_paypal_cancelled_return() {
         $_GET['donation_cancelled'] = '1';
 
-        Monkey\Functions\expect('add_action')
-            ->once()
-            ->with('wp_footer', array($this->plugin, 'show_cancelled_message'));
-
         $this->plugin->handle_paypal_return();
+
+        $this->assertNotFalse(has_action('wp_footer', array($this->plugin, 'show_cancelled_message')));
     }
 
     /**
@@ -313,33 +289,15 @@ class PayPal_Processing_Test extends TestCase {
      * Test HTTP error during IPN verification
      */
     public function test_handle_ipn_http_error() {
-        $_POST = $this->createMockIPNRequest();
-        $_GET['wpd_ipn'] = '1';
+        $ipn = $this->createMockIPNRequest();
+        $this->mockSandboxOption();
 
-        // Mock HTTP error
         Monkey\Functions\when('wp_remote_post')
             ->justReturn(new \WP_Error('http_request_failed', 'Connection failed'));
 
-        Monkey\Functions\when('is_wp_error')
-            ->justReturn(true);
-
-        Monkey\Functions\when('get_option')
-            ->alias(function($option, $default = false) {
-                if ($option === 'wpd_sandbox_mode') {
-                    return true;
-                }
-                return $default;
-            });
-
-        // Database should not be updated on HTTP error
         $wpdb = $this->mockWpdb();
-        $wpdb->expects($this->never())
-             ->method('update');
+        $wpdb->expects($this->never())->method('update');
 
-        global $wpdb;
-
-        Monkey\Functions\when('exit')->justReturn(null);
-        
-        $this->plugin->handle_paypal_return();
+        $this->assertFalse($this->plugin->process_ipn($this->ipnBody($ipn), $ipn));
     }
 }

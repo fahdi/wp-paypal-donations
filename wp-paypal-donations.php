@@ -333,7 +333,18 @@ class WP_PayPal_Donations {
     }
     
     private function handle_ipn() {
-        $postdata = file_get_contents('php://input');
+        $this->process_ipn(file_get_contents('php://input'), $_POST);
+        exit;
+    }
+
+    /**
+     * Verify an IPN message with PayPal and record the donation.
+     *
+     * @param string $postdata Raw request body as received from PayPal.
+     * @param array  $ipn      Parsed IPN fields (normally $_POST).
+     * @return bool True when the donation was marked completed.
+     */
+    public function process_ipn($postdata, $ipn) {
         $req = 'cmd=_notify-validate&' . $postdata;
         
         $paypal_url = $this->get_paypal_url();
@@ -345,13 +356,13 @@ class WP_PayPal_Donations {
         ));
         
         if (is_wp_error($response)) {
-            return;
+            return false;
         }
         
         if (wp_remote_retrieve_body($response) === 'VERIFIED') {
-            $payment_status = sanitize_text_field($_POST['payment_status']);
-            $txn_id = sanitize_text_field($_POST['txn_id']);
-            $custom = intval($_POST['custom']);
+            $payment_status = sanitize_text_field($ipn['payment_status'] ?? '');
+            $txn_id = sanitize_text_field($ipn['txn_id'] ?? '');
+            $custom = intval($ipn['custom'] ?? 0);
             
             if ($payment_status === 'Completed') {
                 global $wpdb;
@@ -362,7 +373,7 @@ class WP_PayPal_Donations {
                     array(
                         'payment_status' => 'completed',
                         'transaction_id' => $txn_id,
-                        'paypal_response' => serialize($_POST)
+                        'paypal_response' => serialize($ipn)
                     ),
                     array('id' => $custom),
                     array('%s', '%s', '%s'),
@@ -371,10 +382,11 @@ class WP_PayPal_Donations {
                 
                 // Send notification emails
                 $this->send_donation_notifications($custom);
+                return true;
             }
         }
         
-        exit;
+        return false;
     }
     
     public function admin_page() {

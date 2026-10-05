@@ -20,6 +20,10 @@ abstract class TestCase extends PHPUnitTestCase {
      */
     protected function setUp(): void {
         parent::setUp();
+
+        // Superglobals must not leak between tests.
+        $_GET = array();
+        $_POST = array();
         
         // Initialize Brain Monkey
         Monkey\setUp();
@@ -58,6 +62,10 @@ abstract class TestCase extends PHPUnitTestCase {
         Monkey\Functions\when('admin_url')->returnArg();
         Monkey\Functions\when('plugin_dir_url')->returnArg();
         Monkey\Functions\when('plugin_dir_path')->returnArg();
+        Monkey\Functions\when('plugin_basename')->returnArg();
+        Monkey\Functions\when('register_activation_hook')->justReturn(null);
+        Monkey\Functions\when('register_deactivation_hook')->justReturn(null);
+        Monkey\Functions\when('load_plugin_textdomain')->justReturn(true);
         
         // Mock text functions
         Monkey\Functions\when('__')->returnArg();
@@ -65,13 +73,29 @@ abstract class TestCase extends PHPUnitTestCase {
         Monkey\Functions\when('esc_html')->returnArg();
         Monkey\Functions\when('esc_attr')->returnArg();
         Monkey\Functions\when('sanitize_text_field')->returnArg();
+        Monkey\Functions\when('sanitize_textarea_field')->returnArg();
         Monkey\Functions\when('sanitize_email')->returnArg();
+        Monkey\Functions\when('wp_strip_all_tags')->alias('strip_tags');
+        Monkey\Functions\when('wp_kses')->returnArg();
+        Monkey\Functions\when('wp_privacy_anonymize_data')->justReturn('***');
+        Monkey\Functions\when('is_email')->alias(function ($email) {
+            return filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : false;
+        });
         
+        Monkey\Functions\when('is_wp_error')->alias(function ($thing) {
+            return $thing instanceof \WP_Error;
+        });
+        Monkey\Functions\when('get_transient')->justReturn(false);
+        Monkey\Functions\when('set_transient')->justReturn(true);
+
         // Mock HTTP functions
         Monkey\Functions\when('wp_remote_post')->justReturn(array(
             'response' => array('code' => 200),
             'body' => 'VERIFIED'
         ));
+        Monkey\Functions\when('wp_remote_retrieve_body')->alias(function ($response) {
+            return is_array($response) && isset($response['body']) ? $response['body'] : '';
+        });
         
         // Mock email functions
         Monkey\Functions\when('wp_mail')->justReturn(true);
